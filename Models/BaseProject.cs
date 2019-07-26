@@ -24,7 +24,7 @@ namespace SolutionMerger.Models
         public string SolutionDir { get { return ProjectInfo.SolutionInfo.BaseDir; } }
         public string SolutionName { get { return ProjectInfo.SolutionInfo.Name; } }
         public string Name { get; protected set; }
-        public string Guid { get; protected set; }
+        public string Guid { get; set; }
         public ProjectInfo ProjectInfo { get; protected set; }
 
         public static readonly ProjectLocationComparerImpl ProjectGuidLocationComparer = new ProjectLocationComparerImpl();

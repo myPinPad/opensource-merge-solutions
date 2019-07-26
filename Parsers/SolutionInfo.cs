@@ -64,7 +64,38 @@ EndGlobal
 
         public static SolutionInfo MergeSolutions(string newName, string baseDir, out string warnings, params SolutionInfo[] solutions)
         {
-            var allProjects = solutions.SelectMany(s => s.Projects).Distinct(BaseProject.ProjectGuidLocationComparer).ToList();
+            var duplicates = solutions
+                .SelectMany(s => s.Projects)
+                .GroupBy(p => p.Guid)
+                .Where(g => g.Count() > 1)
+                .Select(y => y.Key)
+                .ToList();
+
+            var relocation = new Dictionary<string, Dictionary<string, string>>();
+            var allProjects = new List<BaseProject>();
+            foreach (var solution in solutions)
+            {
+                foreach (var project in solution.Projects)
+                {
+                    var shouldRelocate = duplicates.Contains(project.Guid);
+                    if (shouldRelocate)
+                    {
+                        // Whenever we see this project GUID in the nested project section,
+                        // we are going to replace it with this new GUID.
+                        var newGuid = $"{{{Guid.NewGuid().ToString()}}}";
+
+                        if (relocation.ContainsKey(solution.Name))
+                            relocation[solution.Name].Add(project.Guid, newGuid);
+                        else
+                            relocation.Add(solution.Name, new Dictionary<string, string> { { project.Guid, newGuid } });
+
+                        // We have a copy of this GUID - update it now.
+                        project.Guid = newGuid;
+                    }
+
+                    allProjects.Add(project);
+                }
+            }
 
             warnings = SolutionDiagnostics.DiagnoseDupeGuids(solutions);
 
@@ -95,8 +126,31 @@ EndGlobal
                     .Split(new[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries)
                     .Select(part => part.Split('='))
                     .ToDictionary(
-                        split => split[0].Trim(charsToTrim),  // GUID of this project.
-                        split => split[1].Trim(charsToTrim)); // GUID of location where this project belongs.
+                        split => // GUID of this project.
+                        {
+                            var newGuid = string.Empty;
+                            var key = split[0].Trim(charsToTrim);
+                            if (relocation.ContainsKey(solution.Name) &&
+                                relocation[solution.Name].TryGetValue(key, out newGuid))
+                            {
+                                key = newGuid;
+                            }
+
+                            return key;
+                        },
+                        split => // GUID of location where this project belongs.
+                        {
+                            var newGuid = string.Empty;
+                            var key = split[1].Trim(charsToTrim);
+                            if (relocation.ContainsKey(solution.Name) &&
+                                relocation[solution.Name].TryGetValue(key, out newGuid))
+                            {
+                                key = newGuid;
+                            }
+
+                            return key;
+                        });
+
                 allNestedProjects.Add(solution.Name, value);
             }
 
