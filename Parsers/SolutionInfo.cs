@@ -1,6 +1,8 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using SolutionMerger.Models;
 using SolutionMerger.Utils;
 
@@ -25,9 +27,9 @@ namespace SolutionMerger.Parsers
             return sln;
         }
 
-        private SolutionInfo CreateNestedDirs()
+        private SolutionInfo CreateNestedDirs(Dictionary<string, Dictionary<string, string>> allNestedProjects)
         {
-            Project.GenerateProjectDirs(NestedSection, Projects);
+            Project.GenerateProjectDirs(NestedSection, Projects, allNestedProjects);
             return this;
         }
 
@@ -67,8 +69,42 @@ EndGlobal
             warnings = SolutionDiagnostics.DiagnoseDupeGuids(solutions);
 
             var mergedSln = new SolutionInfo(newName, baseDir, solutions[0].PropsSection, new NestedProjectsInfo()) { Projects = allProjects };
-            mergedSln.CreateNestedDirs()
-                .Projects.ForEach(pr => pr.ProjectInfo.SolutionInfo = mergedSln);
+
+            // Parse the following section in each .sln file:
+            //
+            //     GlobalSection(NestedProjects) = preSolution
+            //         {GUID A} = {GUID B}
+            //         {GUID C} = {GUID D}
+            //         ...
+            //     EndGlobalSection
+            //
+            // and determine its original location associations (e.g. A belongs to B, C belongs to D).
+            char[] charsToTrim = { ' ', '\t' };
+            var nested =
+                new Regex(@"GlobalSection\(NestedProjects\)\s=\spreSolution(?<Section>[\s\S]*?)EndGlobalSection",
+                    RegexOptions.Multiline | RegexOptions.Compiled);
+            var allNestedProjects = new Dictionary<string, Dictionary<string, string>>();
+            foreach (var solution in solutions)
+            {
+                var found = nested.Match(solution.Text).Groups["Section"].Value;
+                if (string.IsNullOrEmpty(found))
+                    continue;
+
+                var value = found
+                    .Trim(charsToTrim)
+                    .Split(new[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(part => part.Split('='))
+                    .ToDictionary(
+                        split => split[0].Trim(charsToTrim),  // GUID of this project.
+                        split => split[1].Trim(charsToTrim)); // GUID of location where this project belongs.
+                allNestedProjects.Add(solution.Name, value);
+            }
+
+            mergedSln.CreateNestedDirs(allNestedProjects)
+                .Projects.ForEach(pr =>
+                {
+                    pr.ProjectInfo.SolutionInfo = mergedSln;
+                });
 
             return mergedSln;
         }
