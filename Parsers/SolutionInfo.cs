@@ -49,8 +49,8 @@ namespace SolutionMerger.Parsers
         public override string ToString()
         {
             return string.Format(
-                @"Microsoft Visual Studio Solution File, Format Version 11.00
-# Visual Studio 2010{0}
+                @"Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 16{0}
 Global
 {1}
 {2}
